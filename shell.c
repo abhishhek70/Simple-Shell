@@ -11,6 +11,7 @@
 #define MAX_HISTORY 100
 
 typedef struct{
+    char input[MAX_INPUT];
     char command[MAX_INPUT];
     pid_t pid;
     time_t start_time;
@@ -20,8 +21,9 @@ typedef struct{
 command_history history[MAX_HISTORY];
 int history_count = 0;
 
-void add_to_history(const char *command, pid_t pid, time_t start_time, double duration){
+void add_to_history(const char *input, const char *command, pid_t pid, time_t start_time, double duration){
     if(history_count < MAX_HISTORY){
+        strncpy(history[history_count].input, input, MAX_INPUT);
         strncpy(history[history_count].command, command, MAX_INPUT);
         history[history_count].pid = pid;
         history[history_count].start_time = start_time;
@@ -35,14 +37,14 @@ void add_to_history(const char *command, pid_t pid, time_t start_time, double du
 void display_all_info(){
     for(int i=0; i<history_count; i++){
         printf("%d: %s (PID: %d, Start Time: %sDuration: %.2f seconds)\n", 
-            i+1, history[i].command, history[i].pid, 
+            i+1, history[i].input, history[i].pid, 
             ctime(&history[i].start_time), history[i].duration);
     }
 }
 
 void display_history(){
     for(int i=0; i<history_count; i++){
-        printf("%s\n", history[i].command);
+        printf("%s", history[i].input);
     }
 }
 
@@ -66,7 +68,7 @@ void parse_input(char *user_input, char **command, char **args){
     args[arg_index] = NULL;
 }
 
-void run_command(char *command, char **args){
+void run_command(char *input, char *command, char **args){
     pid_t pid = fork();
     if(pid < 0){
         printf("ERROR: Fork Failed\n");
@@ -84,7 +86,7 @@ void run_command(char *command, char **args){
         waitpid(pid, &status, 0);
         time_t end_time = time(NULL);
         double duration = difftime(end_time, start_time);
-        add_to_history(command, pid, start_time, duration);
+        add_to_history(input, command, pid, start_time, duration);
     }
 }
 
@@ -93,6 +95,9 @@ void run_piped_commands(char *input){
     char *args[MAX_ARGS];
     char *pipe_cmds[10];
     int pipe_count = 0;
+
+    char user_input[MAX_INPUT];
+    strncpy(user_input, input, MAX_INPUT);
 
     command = strtok(input, "|");
     while(command != NULL && pipe_count < 10){
@@ -108,6 +113,9 @@ void run_piped_commands(char *input){
             return;
         }
     }
+
+    time_t start_time = time(NULL);
+    pid_t pid1=0;
 
     for(int i=0; i<pipe_count; i++){
         char *args[MAX_ARGS];
@@ -131,6 +139,9 @@ void run_piped_commands(char *input){
             printf("ERROR: Command Execution Failed");
             exit(1);
         }
+        if(pid > 0){
+            if(i == 0) pid1 = pid;
+        }
     }
 
     for(int i=0; i<2*(pipe_count-1); i++){
@@ -140,10 +151,14 @@ void run_piped_commands(char *input){
     for(int i=0; i<pipe_count; i++){
         wait(NULL);
     }
+
+    time_t end_time = time(NULL);
+    double duration = difftime(end_time, start_time);
+    add_to_history(user_input, user_input, pid1, start_time, duration);
 }
 
-void launch(char *command, char **args){
-    run_command(command, args);
+void launch(char *input, char *command, char **args){
+    run_command(input, command, args);
 }
 
 static void my_handler(int signum){
@@ -164,6 +179,7 @@ void shell_loop(){
     int status = 1;
     char *shell_user = "SimpleShell@abhishek: ";
     char user_input[MAX_INPUT];
+    char input[MAX_INPUT];
     char *command;
     char *args[MAX_ARGS];
 
@@ -172,6 +188,7 @@ void shell_loop(){
         if(fgets(user_input, MAX_INPUT, stdin) == NULL){
             break;
         }
+        strncpy(input, user_input, MAX_INPUT);
         if(strchr(user_input, '|') != NULL){
             run_piped_commands(user_input);
         }else{
@@ -182,7 +199,7 @@ void shell_loop(){
             if(strcmp(command, "history") == 0){
                 display_history();
             }else{
-                launch(command, args);
+                launch(input, command, args);
             }
         }
     }while(status);
